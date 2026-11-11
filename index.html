@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="売買実績">
+<title>売買実績</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #ffffff; --bg-subtle: #f7f7f8; --bg-hover: #f2f2f4; --border: #e4e4e7;
+    --text: #18181b; --text-muted: #63636b;
+    --accent: #2f5bd3; --accent-soft: #e8eefb;
+    --gain: #1a7f4b; --gain-soft: #e6f4ec;
+    --loss: #c4314b; --loss-soft: #fbe9ec;
+    --warn: #a15c07; --warn-soft: #fdf1e1;
+    --series-1: #2a78d6; --series-bench: #9a9aa2; --grid: #ececef;
+    --radius-sm: 6px; --radius: 10px;
+    --tabbar: 56px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #111113; --bg-subtle: #18181b; --bg-hover: #1f1f23; --border: #2c2c31;
+      --text: #ededf0; --text-muted: #a1a1aa;
+      --accent: #6d8ff0; --accent-soft: #1d2640;
+      --gain: #4cc38a; --gain-soft: #12291d;
+      --loss: #f07186; --loss-soft: #33161c;
+      --warn: #e0a24a; --warn-soft: #2e2212;
+      --series-1: #3987e5; --series-bench: #6e6e76; --grid: #232327;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.7 system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", "Segoe UI", "Yu Gothic UI", sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  .num { font-variant-numeric: tabular-nums; }
+  .gain { color: var(--gain); } .loss { color: var(--loss); }
+  .muted { color: var(--text-muted); }
+  .small { font-size: 12px; color: var(--text-muted); }
+  button { font: inherit; color: inherit; }
+  button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+
+  /* ヘッダー */
+  header {
+    position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--border);
+    padding: calc(env(safe-area-inset-top) + 8px) 16px 8px;
+  }
+  .head { max-width: 640px; margin: 0 auto; display: flex; align-items: center; gap: 12px; min-height: 36px; }
+  h1 { font-size: 16px; font-weight: 600; margin: 0; }
+  .updated { font-size: 12px; color: var(--text-muted); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .icon-btn {
+    width: 36px; height: 36px; display: inline-grid; place-items: center; border: 1px solid var(--border);
+    background: var(--bg); border-radius: var(--radius-sm); cursor: pointer; flex: none;
+  }
+  .icon-btn:active { background: var(--bg-hover); }
+  .icon-btn.spin svg { animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  main { max-width: 640px; margin: 0 auto; padding: 16px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 32px); }
+  section { margin-top: 32px; }
+  section:first-child { margin-top: 0; }
+  h2 { font-size: 14px; font-weight: 600; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 32px; }
+  h2 .meta { font-size: 12px; font-weight: 400; color: var(--text-muted); }
+  h2 .end { margin-left: auto; }
+
+  /* KPI */
+  .kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: var(--radius); }
+  .kpi { padding: 12px 16px; min-width: 0; border-top: 1px solid var(--border); }
+  .kpi:nth-child(odd):not(.hero) { border-left: 1px solid var(--border); }
+  .kpi .label { font-size: 12px; color: var(--text-muted); }
+  .kpi .value { font-size: 20px; font-weight: 600; line-height: 1.3; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kpi .sub { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kpi.hero { grid-column: 1 / -1; border-top: 0; }
+  .kpi.hero .value { font-size: 30px; }
+
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 2px; background: var(--bg-subtle); }
+  .seg button {
+    font-size: 13px; font-weight: 500; border: 0; background: transparent; color: var(--text-muted);
+    padding: 0 12px; border-radius: 4px; cursor: pointer; min-height: 32px;
+  }
+  .seg button[aria-pressed="true"] { background: var(--bg); color: var(--text); box-shadow: 0 0 0 1px var(--border); }
+  .seg button:disabled { opacity: .4; cursor: default; }
+  .seg.full { display: flex; }
+  .seg.full button { flex: 1; }
+  select {
+    font: inherit; font-size: 14px; height: 36px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg); color: var(--text);
+  }
+
+  .chart-box { position: relative; height: 220px; }
+  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+  .legend span::before { content: ""; display: inline-block; width: 12px; height: 2px; vertical-align: middle; margin-right: 6px; background: var(--c); }
+
+  /* 一覧（行 + 区切り線） */
+  .list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
+  .list > li { padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .row { display: flex; align-items: baseline; gap: 12px; }
+  .row .main { flex: 1; min-width: 0; }
+  .row .side { text-align: right; flex: none; }
+  .name { font-weight: 500; overflow-wrap: anywhere; }
+  .code { color: var(--text-muted); font-size: 12px; margin-right: 6px; font-weight: 400; }
+  .pnl { font-weight: 600; white-space: nowrap; }
+  .detail { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .note { font-size: 13px; margin-top: 4px; }
+  .empty { padding: 16px 0; color: var(--text-muted); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .more { display: block; width: 100%; margin-top: 8px; min-height: 40px; border: 1px solid var(--border); background: var(--bg); border-radius: var(--radius-sm); color: var(--accent); font-size: 13px; font-weight: 500; cursor: pointer; }
+
+  .badge { display: inline-block; font-size: 12px; line-height: 20px; padding: 0 8px; border-radius: 4px; font-weight: 500; white-space: nowrap; vertical-align: 1px; }
+  .badge.buy { background: var(--accent-soft); color: var(--accent); }
+  .badge.sell, .badge.neutral { background: var(--bg-subtle); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
+  .badge.good { background: var(--gain-soft); color: var(--gain); }
+  .badge.bad { background: var(--loss-soft); color: var(--loss); }
+  .badge.warn { background: var(--warn-soft); color: var(--warn); }
+
+  .regime { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius); }
+  .regime .big { font-size: 20px; font-weight: 600; }
+  .regime .policy { flex-basis: 100%; font-size: 13px; color: var(--text-muted); }
+  .controls { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+  .controls .session-note { font-size: 12px; color: var(--text-muted); }
+
+  /* タブバー */
+  nav.tabs {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: var(--bg); border-top: 1px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  nav.tabs .inner { max-width: 640px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); height: var(--tabbar); }
+  nav.tabs button {
+    border: 0; background: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px; font-size: 11px; font-weight: 500; color: var(--text-muted);
+  }
+  nav.tabs button[aria-selected="true"] { color: var(--accent); }
+
+  /* ロック画面 */
+  .lock { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; }
+  .lock form { width: 100%; max-width: 360px; }
+  .lock h1 { font-size: 20px; margin-bottom: 4px; }
+  .lock p { margin: 0 0 24px; color: var(--text-muted); font-size: 13px; }
+  .field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px; }
+  .field input[type=password] {
+    width: 100%; height: 44px; padding: 0 12px; font: inherit; font-size: 16px; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+  }
+  .field input[aria-invalid="true"] { border-color: var(--loss); }
+  .err { color: var(--loss); font-size: 13px; margin-top: 4px; min-height: 22px; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 4px 0 16px; min-height: 32px; }
+  .check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+  .primary {
+    width: 100%; height: 44px; border: 0; border-radius: var(--radius-sm); background: var(--accent); color: #fff;
+    font-size: 15px; font-weight: 500; cursor: pointer;
+  }
+  .primary:disabled { opacity: .6; cursor: default; }
+  .notice { padding: 24px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-subtle); }
+  .notice p { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; }
+  .link-btn { border: 0; background: none; color: var(--accent); font-size: 13px; padding: 8px 0; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<div id="lock" class="lock" hidden>
+  <form id="lockForm" autocomplete="on">
+    <h1>売買実績</h1>
+    <p>データは暗号化されています。パスワードを入力すると、この端末の中だけで復号して表示します。</p>
+    <input type="text" name="username" value="stock-dashboard" autocomplete="username" hidden>
+    <div class="field">
+      <label for="pw">パスワード</label>
+      <input type="password" id="pw" autocomplete="current-password" required aria-describedby="pwErr">
+      <div class="err" id="pwErr" role="alert"></div>
+    </div>
+    <label class="check"><input type="checkbox" id="remember" checked> この端末で記憶する</label>
+    <button type="submit" class="primary" id="unlockBtn">表示する</button>
+  </form>
+</div>
+
+<div id="shell" hidden>
+  <header>
+    <div class="head">
+      <h1>売買実績</h1>
+      <span class="updated num" id="updated"></span>
+      <button type="button" class="icon-btn" id="reload" aria-label="最新のデータを読み込む">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+      </button>
+    </div>
+  </header>
+  <main id="app"></main>
+  <nav class="tabs" aria-label="表示の切り替え">
+    <div class="inner" role="tablist">
+      <button type="button" role="tab" data-tab="summary" aria-selected="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/></svg>概要</button>
+      <button type="button" role="tab" data-tab="judge" aria-selected="false">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>判断</button>
+      <button type="button" role="tab" data-tab="trades" aria-selected="false">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M3 8l4-4 4 4"/><path d="M17 20V4M13 16l4 4 4-4"/></svg>売買</button>
+      <button type="button" role="tab" data-tab="perf" aria-selected="false">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>実績</button>
+    </div>
+  </nav>
+</div>
+
+<script>
+const yen = v => v == null ? "—" : Math.round(v).toLocaleString("ja-JP") + "円";
+const signedYen = v => v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(Math.round(v)).toLocaleString("ja-JP") + "円";
+const pct = (v, d = 2) => v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v * 100).toFixed(d) + "%";
+const price = v => v == null ? "—" : v.toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const tone = v => v > 0 ? "gain" : v < 0 ? "loss" : "";
+const arrow = v => v > 0 ? "▲ " : v < 0 ? "▼ " : "";
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const safeUrl = u => /^https?:\/\//.test(u || "") ? esc(u) : "#";
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const axisYen = v => Math.abs(v) >= 10000 ? (v / 10000).toLocaleString("ja-JP", { maximumFractionDigits: 1 }) + "万" : v.toLocaleString("ja-JP");
+const md = d => `${+d.slice(5, 7)}/${+d.slice(8, 10)}`;
+const REGIME_BADGE = { "強気": "good", "中立": "warn", "弱気": "bad" };
+const VERDICT = { critical: ["重大な悪材料", "bad"], negative: ["悪材料", "bad"], positive: ["好材料", "good"], neutral: ["材料なし", "neutral"] };
+const SESSIONS = [
+  ["morning", "8:30", "前日終値のシグナルを夜間の米国市場と朝のニュースで再判断 → 9:00 に約定", "前日終値"],
+  ["noon", "12:00", "前場の値動きで判断 → 12:30（後場寄り）に約定", "前場終値"],
+  ["close", "16:30", "終値時点の判断 → 翌営業日 9:00 に約定", "終値"],
+];
+const EXEC_LABEL = { next_open: "翌営業日 9:00", open: "9:00", pm_open: "12:30" };
+const KEY_STORE = "stock-dashboard-key";
+
+/* ---------- 復号 ---------- */
+const b64dec = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const b64enc = u => btoa(String.fromCharCode(...u));
+let enc = null, rawKey = null, data = null;
+
+async function fetchEncrypted() {
+  const res = await fetch(`data.json?t=${Date.now()}`, { cache: "no-store" });
+  if (!res.ok) throw new Error("fetch");
+  return res.json();
+}
+async function deriveKey(pw, e) {
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveBits"]);
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: b64dec(e.salt), iterations: e.iter }, base, 256));
+}
+async function decrypt(e, raw) {
+  const key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64dec(e.iv) }, key, b64dec(e.ct));
+  const stream = new Blob([plain]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return JSON.parse(await new Response(stream).text());
+}
+function storedKey(e) {
+  for (const store of [sessionStorage, localStorage]) {
+    try {
+      const s = JSON.parse(store.getItem(KEY_STORE) || "null");
+      if (s && s.salt === e.salt) return b64dec(s.key);
+    } catch (err) {}
+  }
+  return null;
+}
+function saveKey(e, raw, remember) {
+  const v = JSON.stringify({ salt: e.salt, key: b64enc(raw) });
+  try { sessionStorage.setItem(KEY_STORE, v); } catch (err) {}
+  try { remember ? localStorage.setItem(KEY_STORE, v) : localStorage.removeItem(KEY_STORE); } catch (err) {}
+}
+function forgetKey() {
+  try { sessionStorage.removeItem(KEY_STORE); localStorage.removeItem(KEY_STORE); } catch (err) {}
+}
+
+function showLock(message = "") {
+  document.getElementById("shell").hidden = true;
+  document.getElementById("lock").hidden = false;
+  const err = document.getElementById("pwErr");
+  err.textContent = message;
+  document.getElementById("pw").setAttribute("aria-invalid", message ? "true" : "false");
+}
+
+document.getElementById("lockForm").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const btn = document.getElementById("unlockBtn"), pw = document.getElementById("pw");
+  btn.disabled = true; btn.textContent = "確認中…";
+  try {
+    enc ??= await fetchEncrypted();
+    const raw = await deriveKey(pw.value, enc);
+    data = await decrypt(enc, raw);
+    rawKey = raw;
+    saveKey(enc, raw, document.getElementById("remember").checked);
+    pw.value = "";
+    document.getElementById("lock").hidden = true;
+    render();
+  } catch (e) {
+    showLock(e.message === "fetch" ? "データを読み込めませんでした。通信状況を確認してください。" : "パスワードが違います");
+  } finally {
+    btn.disabled = false; btn.textContent = "表示する";
+  }
+});
+
+async function boot() {
+  try { enc = await fetchEncrypted(); }
+  catch (e) { showLock("データを読み込めませんでした。通信状況を確認してください。"); return; }
+  const raw = storedKey(enc);
+  if (!raw) { showLock(); return; }
+  try { data = await decrypt(enc, raw); rawKey = raw; render(); }
+  catch (e) { forgetKey(); showLock("パスワードが変更されました。もう一度入力してください。"); }
+}
+
+// 画面に戻ってきたとき・再読み込みボタンで、新しいデータが公開されていれば表示し直す
+async function refresh(manual) {
+  if (!rawKey) return;
+  const btn = document.getElementById("reload");
+  if (manual) btn.classList.add("spin");
+  try {
+    const e = await fetchEncrypted();
+    if (e.ct !== enc.ct) {
+      if (e.salt !== enc.salt) { enc = e; forgetKey(); rawKey = null; showLock("パスワードが変更されました。もう一度入力してください。"); return; }
+      enc = e; data = await decrypt(e, rawKey); render(true);
+    }
+  } catch (e) {}
+  finally { btn.classList.remove("spin"); }
+}
+document.getElementById("reload").addEventListener("click", () => refresh(true));
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(false); });
+
+/* ---------- 画面 ---------- */
+let tab = "summary", range = "3m", tradeFilter = "all", periodView = "daily", selectedDate = null, selectedSession = null;
+let tradeLimit = 30, dayLimit = 30, charts = [];
+try { tab = sessionStorage.getItem("m-tab") || tab; } catch (e) {}
+
+document.querySelectorAll("nav.tabs [data-tab]").forEach(b => b.addEventListener("click", () => {
+  tab = b.dataset.tab;
+  try { sessionStorage.setItem("m-tab", tab); } catch (e) {}
+  render(); scrollTo(0, 0);
+}));
+
+function render(keepScroll) {
+  document.getElementById("shell").hidden = false;
+  document.querySelectorAll("nav.tabs [data-tab]").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === tab));
+  charts.forEach(c => c.destroy()); charts = [];
+  const r = data.report, app = document.getElementById("app");
+  document.getElementById("updated").textContent = data.generated_at ? `${data.generated_at} 更新` : "";
+  if (r.empty || !r.daily.length) {
+    app.innerHTML = `<div class="notice"><b>まだペーパートレードの記録がありません</b><p>大引け後の処理が終わると、ここに表示されます。</p></div>`;
+    return;
+  }
+  const y = keepScroll ? scrollY : 0;
+  ({ summary: renderSummary, judge: renderJudge, trades: renderTrades, perf: renderPerf })[tab](app, r);
+  if (keepScroll) scrollTo(0, y);
+}
+
+/* 概要 */
+function renderSummary(app, r) {
+  const s = r.summary;
+  const excess = s.benchmark_return == null ? null : s.total_return - s.benchmark_return;
+  app.innerHTML = `
+  <section>
+    <div class="kpis num">
+      <div class="kpi hero"><div class="label">総資産</div><div class="value">${yen(s.equity)}</div>
+        <div class="sub"><span class="${tone(s.total_pnl)}">${signedYen(s.total_pnl)}（${pct(s.total_return)}）</span> ・ 元本 ${yen(s.initial_capital)}</div></div>
+      <div class="kpi"><div class="label">直近日の損益</div><div class="value ${tone(s.last_daily_pnl)}">${signedYen(s.last_daily_pnl)}</div><div class="sub">${s.last_date}</div></div>
+      <div class="kpi"><div class="label">TOPIX 比</div><div class="value ${tone(excess)}">${excess == null ? "—" : pct(excess)}</div><div class="sub">TOPIX ${pct(s.benchmark_return)}</div></div>
+      <div class="kpi"><div class="label">勝率</div><div class="value">${s.win_rate == null ? "—" : (s.win_rate * 100).toFixed(1) + "%"}</div><div class="sub">決済 ${s.n_closed}回 ・ PF ${s.profit_factor == null ? "—" : s.profit_factor.toFixed(2)}</div></div>
+      <div class="kpi"><div class="label">最大ドローダウン</div><div class="value">${pct(s.max_drawdown)}</div><div class="sub">現金 ${yen(s.cash)}</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>資産推移
+      <span class="seg end" role="group" aria-label="期間">
+        ${[["1m", "1か月"], ["3m", "3か月"], ["all", "全期間"]].map(([k, l]) => `<button type="button" data-range="${k}" aria-pressed="${range === k}">${l}</button>`).join("")}
+      </span>
+    </h2>
+    <div class="chart-box"><canvas id="equityChart" aria-label="資産推移のグラフ"></canvas></div>
+    <div class="legend"><span style="--c:var(--series-1)">運用資産</span><span style="--c:var(--series-bench)">TOPIX（同額投資）</span></div>
+  </section>
+
+  <section>
+    <h2>保有ポジション <span class="meta">${r.positions.length}銘柄 ・ 含み損益 <span class="${tone(s.unrealized_pnl)}">${signedYen(s.unrealized_pnl)}</span></span></h2>
+    ${r.positions.length ? `<ul class="list num">${r.positions.map(p => {
+      const rate = p.last_price / p.avg_price - 1;
+      return `<li><div class="row"><div class="main"><div class="name"><span class="code">${esc(p.code)}</span>${esc(p.name)}</div>
+        <div class="detail">${p.shares.toLocaleString()}株 ・ 取得 ${price(p.avg_price)} → 現在 ${price(p.last_price)} ・ ${md(p.entry_date)}〜</div></div>
+        <div class="side"><div class="pnl ${tone(p.unrealized_pnl)}">${signedYen(p.unrealized_pnl)}</div><div class="small ${tone(rate)}">${pct(rate)}</div></div></div></li>`;
+    }).join("")}</ul>` : `<div class="empty">保有中の銘柄はありません</div>`}
+  </section>
+
+  <section>
+    <h2>未約定の注文 <span class="meta">${r.orders.length}件</span></h2>
+    ${r.orders.length ? `<ul class="list num">${r.orders.map(o => `<li><div class="row"><div class="main">
+        <div class="name"><span class="badge ${o.side}">${o.side === "buy" ? "買い" : "売り"}</span> <span class="code">${esc(o.code)}</span>${esc(o.name)}</div>
+        <div class="detail">${esc(o.reason)}</div></div>
+        <div class="side"><div>${o.shares.toLocaleString()}株</div><div class="small">${EXEC_LABEL[o.exec_at || "next_open"]}</div></div></div></li>`).join("")}</ul>`
+      : `<div class="empty">注文はありません</div>`}
+  </section>`;
+  app.querySelectorAll("[data-range]").forEach(b => b.addEventListener("click", () => {
+    range = b.dataset.range;
+    app.querySelectorAll("[data-range]").forEach(x => x.setAttribute("aria-pressed", x === b));
+    charts.forEach(c => c.destroy()); charts = [];
+    drawEquity(r);
+  }));
+  drawEquity(r);
+}
+
+function drawEquity(r) {
+  const initial = r.summary.initial_capital;
+  const firstBench = r.daily.find(d => d.benchmark_close)?.benchmark_close;
+  const days = { "1m": 21, "3m": 63, all: Infinity }[range];
+  const rows = r.daily.slice(-Math.min(days, r.daily.length));
+  const grid = css("--grid"), muted = css("--text-muted"), text = css("--text"), bg = css("--bg"), border = css("--border");
+  const font = { family: getComputedStyle(document.body).fontFamily, size: 11 };
+  charts.push(new Chart(document.getElementById("equityChart"), {
+    type: "line",
+    data: { labels: rows.map(d => d.date), datasets: [
+      { label: "運用資産", data: rows.map(d => d.equity), borderColor: css("--series-1"), backgroundColor: css("--series-1"), borderWidth: 2, pointRadius: rows.length < 3 ? 3 : 0, pointHoverRadius: 4, tension: 0 },
+      { label: "TOPIX", data: rows.map(d => firstBench && d.benchmark_close ? initial * d.benchmark_close / firstBench : null), borderColor: css("--series-bench"), backgroundColor: css("--series-bench"), borderWidth: 1.5, borderDash: [4, 3], pointRadius: 0, pointHoverRadius: 4, tension: 0, spanGaps: true },
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: bg, titleColor: text, bodyColor: text, borderColor: border, borderWidth: 1,
+          padding: 8, titleFont: { ...font, weight: 600 }, bodyFont: font, boxWidth: 8, boxHeight: 8, usePointStyle: true,
+          callbacks: { label: c => ` ${c.dataset.label}  ${yen(c.parsed.y)}` },
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, border: { color: border }, ticks: { color: muted, font, maxTicksLimit: 4, maxRotation: 0, callback: function (v) { return md(this.getLabelForValue(v)); } } },
+        y: { grid: { color: grid }, border: { display: false }, ticks: { color: muted, font, maxTicksLimit: 5, callback: axisYen } },
+      },
+    },
+  }));
+}
+
+/* 判断 */
+function renderJudge(app) {
+  const dates = Object.keys(data.days).sort().reverse();
+  if (!dates.length) { app.innerHTML = `<div class="empty">判断の記録はまだありません</div>`; return; }
+  if (!dates.includes(selectedDate)) selectedDate = dates[0];
+  const day = data.days[selectedDate];
+  if (!day[selectedSession]) selectedSession = SESSIONS.map(s => s[0]).filter(k => day[k]).at(-1);
+  const [, , sessionNote, closeLabel] = SESSIONS.find(s => s[0] === selectedSession);
+  const rep = day[selectedSession], mk = rep.market;
+  const policy = mk.regime === "強気" ? "新規買い：通常の金額" : mk.regime === "中立" ? `新規買い：金額を${Math.round(mk.size_factor * 100)}%に縮小` : "新規買い：停止";
+
+  const newsBlock = n => {
+    if (!n) return `<span class="small">ニュース未確認</span>`;
+    const [label, cls] = VERDICT[n.verdict];
+    const kw = n.keywords.length ? ` <span class="small">${esc(n.keywords.join("・"))}</span>` : "";
+    const top = n.headlines[0] ? `<div class="detail"><a href="${safeUrl(n.headlines[0].link)}" target="_blank" rel="noopener noreferrer">${esc(n.headlines[0].title)}</a></div>` : "";
+    return `<span class="badge ${cls}">${label}</span>${kw}${top}`;
+  };
+
+  app.innerHTML = `
+  <section>
+    <div class="controls">
+      <select id="dateSel" aria-label="判断日">${dates.map(d => `<option value="${d}" ${d === selectedDate ? "selected" : ""}>${d}</option>`).join("")}</select>
+      <div class="seg full" role="group" aria-label="判断の時刻">${SESSIONS.map(([k, label]) =>
+        `<button type="button" data-session="${k}" aria-pressed="${k === selectedSession}" ${day[k] ? "" : "disabled"}>${label}</button>`).join("")}</div>
+      <div class="session-note">${sessionNote}</div>
+    </div>
+    <div class="regime num">
+      <span class="badge ${REGIME_BADGE[mk.regime]}">${mk.regime}</span>
+      <span class="big">スコア ${mk.score > 0 ? "+" : ""}${mk.score}</span>
+      <span class="policy">${policy} ・ 強気 ≥ +2 / 弱気 ≤ −2</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>買いシグナル銘柄 <span class="meta">シグナル ${rep.n_signals ?? 0}件中 上位${rep.candidates.length}件</span></h2>
+    ${rep.candidates.length ? `<ul class="list num">${rep.candidates.map(c => `<li>
+      <div class="row"><div class="main"><div class="name"><span class="code">${esc(c.code)}</span>${esc(c.name)}</div>
+        <div class="detail">${c.watchlist ? "ProPicks ・ " : ""}${esc(c.sector)} ・ ${closeLabel} ${price(c.close)} ・ 20日 <span class="${tone(c.mom)}">${pct(c.mom, 1)}</span> ・ RSI ${c.rsi.toFixed(0)}</div></div>
+        <div class="side"><span class="badge ${c.decision === "買い" ? "buy" : "neutral"}">${esc(c.decision)}</span></div></div>
+      ${c.note ? `<div class="note">${esc(c.note)}</div>` : ""}
+      <div style="margin-top:4px">${newsBlock(c.news)}</div></li>`).join("")}</ul>`
+      : `<div class="empty">買いシグナルが出た銘柄はありません</div>`}
+  </section>
+
+  <section>
+    <h2>保有銘柄のチェック</h2>
+    ${rep.exits.length ? `<ul class="list">${rep.exits.map(x => `<li>
+      <div class="row"><div class="main"><div class="name"><span class="code">${esc(x.code)}</span>${esc(x.name)}</div></div>
+        <div class="side"><span class="badge ${x.decision === "継続保有" ? "neutral" : "sell"}">${esc(x.decision)}</span></div></div>
+      <div style="margin-top:4px">${newsBlock(x.news)}</div></li>`).join("")}</ul>`
+      : `<div class="empty">保有銘柄はありません</div>`}
+  </section>
+
+  <section>
+    <h2>市況の指標</h2>
+    <ul class="list num">${mk.factors.map(f => `<li><div class="row">
+      <div class="main"><div class="name">${esc(f.name)}</div><div class="detail">${esc(f.comment)}</div></div>
+      <div class="side"><div>${f.symbol === "JPY=X" ? f.value.toFixed(2) : f.value.toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</div>
+        <div class="small"><span class="${tone(f.change_1d)}">${pct(f.change_1d)}</span> ・ 5日 <span class="${tone(f.change_5d)}">${pct(f.change_5d)}</span></div></div>
+      <div class="side pnl ${tone(f.points)}" style="min-width:24px">${f.points > 0 ? "+" : ""}${f.points}</div></div></li>`).join("")}
+      ${mk.news_sentiment == null ? "" : `<li><div class="row"><div class="main"><div class="name">市場ニュースの論調</div>
+        <div class="detail">${mk.news_sentiment > 0 ? "前向き" : mk.news_sentiment < 0 ? "後ろ向き" : "中立"}（見出し${rep.market_news.headlines.length}件）</div></div>
+        <div class="side pnl ${tone(mk.news_sentiment)}" style="min-width:24px">${mk.news_sentiment > 0 ? "+" : ""}${mk.news_sentiment}</div></div></li>`}
+    </ul>
+    <p class="small">${selectedSession === "close" ? "米国指数・VIX・ドル円は前営業日の確定値です。" : `米国指数・VIX・ドル円は前夜の確定値です。${selectedSession === "noon" ? "TOPIX・日経平均は前場終了時点の値です。" : ""}`}</p>
+  </section>
+
+  ${rep.market_news ? `<section>
+    <h2>市場ニュース</h2>
+    <ul class="list">${rep.market_news.headlines.slice(0, 10).map(h => `<li><div class="row">
+      <div class="main"><a href="${safeUrl(h.link)}" target="_blank" rel="noopener noreferrer">${esc(h.title)}</a><div class="detail">${esc(h.source)}</div></div>
+      <div class="side">${h.tone > 0 ? `<span class="badge good">好</span>` : h.tone < 0 ? `<span class="badge bad">悪</span>` : `<span class="badge neutral">—</span>`}</div></div></li>`).join("")}</ul>
+  </section>` : ""}`;
+
+  app.querySelector("#dateSel").addEventListener("change", e => { selectedDate = e.target.value; render(); });
+  app.querySelectorAll("[data-session]").forEach(b => b.addEventListener("click", () => { selectedSession = b.dataset.session; render(true); }));
+}
+
+/* 売買 */
+function renderTrades(app, r) {
+  const all = r.trades.filter(t => tradeFilter === "all" || t.side === tradeFilter);
+  const rows = all.slice(0, tradeLimit);
+  app.innerHTML = `
+  <section>
+    <h2>売買履歴 <span class="meta">実現損益 <span class="${tone(r.summary.realized_pnl)}">${signedYen(r.summary.realized_pnl)}</span></span></h2>
+    <div class="seg full" role="group" aria-label="売買の種類" style="margin-bottom:12px">
+      ${[["all", "すべて"], ["buy", "買い"], ["sell", "売り"]].map(([k, l]) => `<button type="button" data-tf="${k}" aria-pressed="${tradeFilter === k}">${l}</button>`).join("")}
+    </div>
+    ${all.length ? `<ul class="list num">${rows.map(t => `<li><div class="row">
+      <div class="main"><div class="name"><span class="badge ${t.side}">${t.side === "buy" ? "買い" : "売り"}</span> <span class="code">${esc(t.code)}</span>${esc(t.name)}</div>
+        <div class="detail">${esc(t.date)} ・ ${t.shares.toLocaleString()}株 × ${price(t.price)} ・ ${esc(t.reason)}</div></div>
+      <div class="side">${t.realized_pnl == null ? `<div>${yen(t.amount)}</div>` : `<div class="pnl ${tone(t.realized_pnl)}">${arrow(t.realized_pnl)}${signedYen(t.realized_pnl)}</div><div class="small">${yen(t.amount)}</div>`}</div>
+      </div></li>`).join("")}</ul>
+      ${rows.length < all.length ? `<button type="button" class="more" id="moreTrades">さらに表示（残り ${all.length - rows.length}件）</button>` : ""}`
+      : `<div class="empty">売買履歴はまだありません</div>`}
+  </section>`;
+  app.querySelectorAll("[data-tf]").forEach(b => b.addEventListener("click", () => { tradeFilter = b.dataset.tf; tradeLimit = 30; render(true); }));
+  app.querySelector("#moreTrades")?.addEventListener("click", () => { tradeLimit += 50; render(true); });
+}
+
+/* 実績 */
+function monthly(daily, initial) {
+  const map = new Map();
+  let prevEnd = initial;
+  for (const d of daily) {
+    const m = d.date.slice(0, 7);
+    if (!map.has(m)) map.set(m, { label: m, start: prevEnd, end: d.equity, realized: 0, days: 0 });
+    const x = map.get(m);
+    x.end = d.equity; x.realized += d.realized_pnl; x.days += 1; prevEnd = d.equity;
+  }
+  return [...map.values()].map(x => ({ ...x, pnl: x.end - x.start, rate: x.end / x.start - 1 })).reverse();
+}
+
+function renderPerf(app, r) {
+  let list;
+  if (periodView === "monthly") {
+    list = `<ul class="list num">${monthly(r.daily, r.summary.initial_capital).map(x => `<li><div class="row">
+      <div class="main"><div class="name">${x.label.replace("-", "年")}月</div><div class="detail">月末 ${yen(x.end)} ・ 実現 ${signedYen(x.realized)} ・ ${x.days}営業日</div></div>
+      <div class="side"><div class="pnl ${tone(x.pnl)}">${arrow(x.pnl)}${signedYen(x.pnl)}</div><div class="small ${tone(x.rate)}">${pct(x.rate)}</div></div></div></li>`).join("")}</ul>`;
+  } else {
+    const all = [...r.daily].reverse(), rows = all.slice(0, dayLimit);
+    list = `<ul class="list num">${rows.map(d => {
+      const rate = d.daily_pnl / (d.equity - d.daily_pnl);
+      return `<li><div class="row">
+        <div class="main"><div class="name">${d.date}</div><div class="detail">総資産 ${yen(d.equity)} ・ 保有 ${d.n_positions}銘柄${d.realized_pnl ? ` ・ 実現 ${signedYen(d.realized_pnl)}` : ""}</div></div>
+        <div class="side"><div class="pnl ${tone(d.daily_pnl)}">${arrow(d.daily_pnl)}${signedYen(d.daily_pnl)}</div><div class="small ${tone(rate)}">${pct(rate)}</div></div></div></li>`;
+    }).join("")}</ul>${rows.length < all.length ? `<button type="button" class="more" id="moreDays">さらに表示（残り ${all.length - rows.length}件）</button>` : ""}`;
+  }
+  const weekly = data.weekly || [];
+  app.innerHTML = `
+  <section>
+    <h2>実績</h2>
+    <div class="seg full" role="group" aria-label="集計単位" style="margin-bottom:12px">
+      ${[["daily", "日次"], ["monthly", "月次"]].map(([k, l]) => `<button type="button" data-pv="${k}" aria-pressed="${periodView === k}">${l}</button>`).join("")}
+    </div>
+    ${list}
+  </section>
+  <section>
+    <h2>週次レポート <span class="meta">毎週土曜に前週分を作成</span></h2>
+    ${weekly.length ? `<ul class="list num">${weekly.map(w => {
+      const s = w.summary;
+      const rule = w.changes.length ? w.changes.map(c => `<span class="badge warn">${esc(c)}</span>`).join(" ")
+        : `<span class="small">${w.reviewed ? "ルール見直し済み・変更なし" : ""}</span>`;
+      return `<li><div class="row">
+        <div class="main"><div class="name">${md(w.monday)}〜${md(w.friday)}</div>
+          <div class="detail">決済 ${s.closed_n}件${s.closed_n ? `（${s.closed_wins}勝${s.closed_losses}敗）` : ""} ・ 新規買い ${s.n_buys}件 ・ TOPIX ${pct(s.bench_ret)}</div></div>
+        <div class="side"><div class="pnl ${tone(s.pnl)}">${signedYen(s.pnl)}</div><div class="small ${tone(s.ret)}">${pct(s.ret)}</div></div></div>
+        ${rule.includes("badge") ? `<div style="margin-top:4px">${rule}</div>` : rule ? `<div>${rule}</div>` : ""}</li>`;
+    }).join("")}</ul>` : `<div class="empty">まだ週次レポートはありません</div>`}
+  </section>
+  <section><button type="button" class="link-btn" id="lockNow">この端末からパスワードを消去してロック</button></section>`;
+  app.querySelectorAll("[data-pv]").forEach(b => b.addEventListener("click", () => { periodView = b.dataset.pv; render(true); }));
+  app.querySelector("#moreDays")?.addEventListener("click", () => { dayLimit += 60; render(true); });
+  app.querySelector("#lockNow").addEventListener("click", () => { forgetKey(); rawKey = null; data = null; showLock(); });
+}
+
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => data && render(true));
+boot();
+</script>
+</body>
+</html>
